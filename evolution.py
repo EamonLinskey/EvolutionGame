@@ -5,8 +5,13 @@ import math
 import statistics
 
 BASE_CREATURE_HEIGHT = 10
+BASE_SPEED = 5
+BASE_VISION = 50
+BASE_MINFOOD = 2
 scores = {"blue":0, "green":0, "red":0}
+dead = {"blue":0, "green":0, "red":0}
 roundsCount = 0
+startingNumber = 10
 
 displayWidth = 800
 displayHeight = 600
@@ -33,23 +38,76 @@ class Target:
         self.x = x
         self.y = y
 
+class Gene:
+    def __init__(self, name, geneType, dominance, effect):
+        self.name = name
+        self.geneType = geneType
+        # should be a value from 0 to 1 to detemine dominance
+        self.dominance = dominance
+        # should be  a dict of functions that modify traits 
+        self.effect = effect
+
+def modifyAttribute(amount, attribute):
+    def f(crt):
+        attributes = {"speed": "movement", "vision": "vision", "metabolism": "minFood"}
+        # if attribute == "vision":
+        #     print(crt.vision)
+        #     print(attributes[attribute])
+        setattr(crt, attributes[attribute], (getattr(crt, attributes[attribute]) + amount)) 
+        # if attribute == "vision":
+        #     print(crt.vision)
+        #print(crt.movement)
+        return crt
+    return f
+
+class DNA: 
+    # Each gene should have 2 allels. So they should be list of length 2
+    def __init__(self, speedGene, sightGene, motabolismGene):
+        self.speedGene = speedGene
+        self.sightGene = sightGene
+        self.motabolismGene = motabolismGene
+
+
+longLegs = Gene("longLegs", "speedGene", 1, modifyAttribute(5, "speed"))
+shortLegs = Gene("shortLegs", "speedGene", 0, modifyAttribute(-2, "speed"))
+medLegs = Gene("shortLegs", "speedGene", .5, modifyAttribute(0, "speed"))
+
+hawkEyes = Gene("hawkEyes", "sightGene", 1, modifyAttribute(75, "vision"))
+wormEyes = Gene("wormEyes", "sightGene", 0, modifyAttribute(-25, "vision"))
+normalEyes = Gene("normalEyes", "sightGene", 0.5, modifyAttribute(0, "vision"))
+
+FastMeta = Gene("FastMeta", "motabolismGene", 1, modifyAttribute(1, "metabolism"))
+slowMeta = Gene("slowMeta", "motabolismGene", 0, modifyAttribute(-1, "metabolism"))
+medMeta = Gene("medMeta", "motabolismGene", 0.5, modifyAttribute(0, "metabolism"))
+
+BaseGreenDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], [medMeta, medMeta])
+BaseBlueDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], [medMeta, medMeta])
+BaseRedDNA = DNA([shortLegs, shortLegs], [hawkEyes, hawkEyes], [medMeta, medMeta])
+
+
+
+
+
 class Creature:
     counter = 0
-    def __init__(self, x, y, width, height, color, movement, vision, nickname):
+    def __init__(self, x, y, width, height, color, species, DNA):
         self.x = x
         self.y = y
         self.width = width
         self.height = height
         self.color = color
-        self.movement = movement
+        self.movement = BASE_SPEED
         self.nextMove = math.radians(random.randint(0,360))
         self.numEaten = 0
         self.id = Creature.counter
-        self.vision = vision
-        self.nickname = nickname
+        self.vision = BASE_VISION
+        self.species = species
         self.surface = pygame.Surface((width, height))
         self.prevTarget = Target(0, 0)
+        self.minFood = BASE_MINFOOD
+        self.DNA = DNA
         Creature.counter += 1
+
         #print(f"{self.color}'s angle is {self.nextMove}")
     #def listAttributes():
         #return (self.x, self.y, self.width, self.height, self.color, self.movement)
@@ -186,29 +244,45 @@ def populateFood(number):
         foods.append(Food(x, y, 10,10))
     return foods
 
-def populateCreatures(redNum, blueNum, greenNum):
+def populateCreatures(popList):
     creatures = []
+    DNAAtributes = [a for a in dir(BaseBlueDNA) if not a.startswith('__') and not callable(getattr(BaseBlueDNA,a))]
+    
+    for pair in popList:
+        baseDNA = pair["base"]
+        #print(pair["num"])
+        for i in range(pair["num"]):
+            #print(i)
+            baseCreature = Creature(random.randint(0,displayWidth - 10), random.randint(0,displayHeight - 10),10,10, pair["color"], pair["species"], baseDNA)
+            for attribute in DNAAtributes:
+                genes = getattr(baseCreature.DNA, attribute)
+                dominant = max(genes, key = lambda t: t.dominance)
+                #print(dominant.effect(baseCreature))
+                baseCreature = dominant.effect(baseCreature)
+                
+            creatures.append(baseCreature)
+
+    
     # creature1 = Creature(400,400,10,10,blue, regularMove, regularVis, "Blue")
     # creature2 = Creature(300,120,10,10,red, smallMove, bigVis, "Red")
     # creature3 = Creature(500,130,10,10,green, bigMove, smallVis, "Green")
     # creatures = [creature1, creature2, creature3]
-
-    for i in range(redNum):
-        creatures.append(Creature(random.randint(0,displayWidth - 10), random.randint(0,displayHeight - 10),10,10,blue, regularMove, regularVis, "blue"))
-    for i in range(blueNum):
-        creatures.append(Creature(random.randint(0,displayWidth - 10), random.randint(0,displayHeight - 10),10,10,red, smallMove, bigVis, "red"))
-    for i in range(greenNum):
-        creatures.append(Creature(random.randint(0,displayWidth - 10), random.randint(0,displayHeight - 10),10,10,green, bigMove, smallVis, "green"))
-
+    
+    
     return creatures
 
-def gameLoop():
+def gameLoop(creatures):
+    # print("------------------")
+    # print(creatures[0].movement)
+    # longLegs.effect(creatures[0])
+    # print(creatures[0].movement)
+    # print("------------------")
     clock = pygame.time.Clock()
-
+    numLoops = 0
     
 
-    creatures = populateCreatures(3, 3, 3)
-    foods = populateFood(20)
+    
+    foods = populateFood(60)
 
     gameExit = False
     paused = False
@@ -216,6 +290,7 @@ def gameLoop():
     roundStartTime = time.time()
 
     while not gameExit:
+
         for event in pygame.event.get():
             #print(event)
             if event.type == pygame.QUIT:
@@ -229,21 +304,28 @@ def gameLoop():
                 rect = pygame.Rect(creature.x, creature.y, creature.width, creature.height)
                 if rect.collidepoint(pygame.mouse.get_pos()) and lastHovered != creature:
                     lastHovered = creature
-                    print(f"{creature.nickname} {pygame.mouse.get_pos()}")
+                    print(f"{creature.species} {creature.numEaten} {creature.prevTarget.x, creature.prevTarget.y}")
 
-        if len(foods) == 0 or time.time() - roundStartTime > 60:
+        if len(foods) == 0 or len(creatures) == 0 or numLoops > (1000):
             global roundsCount
             global scores
-            for creature in creatures:
-                scores[creature.nickname] += creature.numEaten
+            global dead
+            numLoops = 0
+            for creature in creatures[:]:
+                scores[creature.species] += creature.numEaten
+                if creature.numEaten < creature.minFood:
+                    print(f'{creature.species} number {creature.id} died from hunger')
+                    creatures.remove(creature)
+                    dead[creature.species] += 1
+                creature.numEaten = 0
             roundsCount += 1
             print(f'ROUND COMPLETE: {roundsCount}')
-            print(f'The Scores:')
-            print(f'Red: {scores["red"]}')
-            print(f'Blue: {scores["blue"]}')
-            print(f'Green: {scores["green"]}')
+            print(f'Remaining Alive:')
+            print(f'Red: {startingNumber - dead["red"]}')
+            print(f'Blue: {startingNumber - dead["blue"]}')
+            print(f'Green: {startingNumber - dead["green"]}')
             if roundsCount < 100:
-                gameLoop()
+                gameLoop(creatures)
                 gameExit = True
             else:
                 gameExit = True
@@ -251,7 +333,10 @@ def gameLoop():
 
 
         if not paused:
+            numLoops += 1
+            
             gameDisplay.fill(white)
+
 
             for creature in creatures:
                 foods = checkFoodCollisions(creature, foods)
@@ -267,7 +352,11 @@ def gameLoop():
         
             clock.tick(fps)
 
-gameLoop()
+blueSpecies = {"num": startingNumber, "base": BaseBlueDNA, "color": blue, "species": "blue"}
+redSpecies = {"num": startingNumber, "base": BaseRedDNA, "color": red, "species": "red"}
+greenSpecies = {"num": startingNumber, "base": BaseGreenDNA, "color": green, "species": "green"}
+creatures = populateCreatures([blueSpecies, redSpecies, greenSpecies])
+gameLoop(creatures)
 pygame.quit()
 quit()
     
