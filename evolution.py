@@ -12,9 +12,9 @@ BASE_CREATURE_WIDTH = 10
 BASE_SPEED = 5
 BASE_VISION = 50
 BASE_MINFOOD = 2
-BASE_NUMCHILD = 3
+BASE_NUMCHILD = 2
 roundsCount = 0
-startingNumber = 10
+startingNumber = 2
 
 displayWidth = 800
 displayHeight = 600
@@ -33,6 +33,8 @@ red = (255,0,0)
 green = (0,255,0)
 blue = (0,0, 255)
 grey = (220,220,220)
+yellow = (255,255,0)
+orange = (255,135,0)
 
 
 # initialize pygame
@@ -64,10 +66,13 @@ class Gene:
 # to the class
 class DNA: 
     # Each gene should have 2 allels. So they should be list of length 2
-    def __init__(self, speedGene, sightGene, motabolismGene):
+    def __init__(self, speedGene, sightGene, motabolismGene, dietGene, 
+                    riskGene):
         self.speedGene = speedGene
         self.sightGene = sightGene
         self.motabolismGene = motabolismGene
+        self.dietGene = dietGene
+        self.riskGene = riskGene
 
 # Defines Creature object. Properties set to constants can be changed once more
 # genes are defined
@@ -79,18 +84,21 @@ class Creature:
         self.width = width
         self.height = height
         self.color = color
-        self.movement = BASE_SPEED
-        self.nextMove = math.radians(random.randint(0,360))
-        self.numEaten = 0
-        self.id = Creature.counter
-        self.vision = BASE_VISION
         self.species = species
+        self.nextMove = math.radians(random.randint(0,360))
         self.prevTarget = Target(random.randint(0, displayWidth - width),
                                  random.randint(0, displayHeight - height))
+        self.id = Creature.counter
+        self.numEaten = 0
+        self.DNA = DNA
+        self.vision = BASE_VISION
         self.minFood = BASE_MINFOOD
         self.numChild = BASE_NUMCHILD
-        self.DNA = DNA
-        self.reproCapacity = 1
+        self.movement = BASE_SPEED
+        self.diet = 0.5
+        self.risk = 0.5
+        self.feelsFull = BASE_MINFOOD + 1
+        self.reproCapacity = 2
         Creature.counter += 1
 
     # function for iterating id's called only when a copy of a creature is 
@@ -124,59 +132,13 @@ class Food:
 def modifyAttribute(amount, attribute):
     def f(crt):
         attributes = {"speed": "movement", "vision": "vision", 
-                        "metabolism": "minFood"}
+                        "metabolism": "minFood", "diet": "diet", 
+                        "fullness": "feelsFull", "risk": "risk"}
         setattr(crt, attributes[attribute], 
                 (getattr(crt, attributes[attribute]) + amount)) 
         return crt
     return f
 
-
-# Defines a list of genes that have specific traits. These must be added by hand
-# TODO allow loading from cvd file maybe? 
-longLegs = Gene("longLegs", "speedGene", 1, modifyAttribute(5, "speed"))
-shortLegs = Gene("shortLegs", "speedGene", 0, modifyAttribute(-2, "speed"))
-medLegs = Gene("shortLegs", "speedGene", .5, modifyAttribute(0, "speed"))
-
-hawkEyes = Gene("hawkEyes", "sightGene", 1, modifyAttribute(75, "vision"))
-wormEyes = Gene("wormEyes", "sightGene", 0, modifyAttribute(-25, "vision"))
-normalEyes = Gene("normalEyes", "sightGene", 0.5, modifyAttribute(0, "vision"))
-
-FastMeta = Gene("FastMeta", "motabolismGene", 1, 
-                modifyAttribute(1, "metabolism"))
-slowMeta = Gene("slowMeta", "motabolismGene", 0, 
-                modifyAttribute(-1, "metabolism"))
-medMeta = Gene("medMeta", "motabolismGene", 0.5, 
-                modifyAttribute(0, "metabolism"))
-
-# Create the base DNA for each species type as well as an overall DNA template
-BaseAllDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
-                    [medMeta, medMeta])
-BaseGreenDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], 
-                    [medMeta, medMeta])
-BaseBlueDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
-                    [medMeta, medMeta])
-BaseRedDNA = DNA([shortLegs, shortLegs], [hawkEyes, hawkEyes], 
-                    [medMeta, medMeta])
-
-# Intialize list of DNA attributes for lookups later
-DNAAtributes = [a for a in dir(BaseAllDNA) if (not a.startswith('__') and 
-                                        not callable(getattr(BaseAllDNA,a)))]
-
-
-# Initializes template creatures. When creatures are breed they use these 
-# templates before their genes are changed with a parental gene mix. This 
-# is not biologically acurate but allows for genes to be stored as an effect on 
-# a baseline value
-BlueTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, blue, "blue",
-                        BaseBlueDNA)
-GreenTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, green, 
-                        "green", BaseGreenDNA)
-RedTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, red, "red",
-                        BaseRedDNA)
-
-# stores the templates for easy access
-TemplateDNADict = {"blue": BlueTemplate, "red": RedTemplate, 
-                    "green": GreenTemplate}
 
 # Draws a circle around creture to represent tit field of view. It assumes 
 # circular FOV
@@ -214,22 +176,72 @@ def angle(p0, p1):
             return math.radians(-90)
 
 # Returns the information on the target the creature should appraoch next 
-def selectTarget(crt, foods):
+def selectTarget(crt, foods, creatures):
+    # Intitalize empy lists
     targets = []
-    # generates list of targets that the creatuer can "see"
-    for food in foods:
-        if (food.x in range(crt.x-crt.vision, crt.x+crt.vision) and 
-        food.y in range(crt.y-crt.vision, crt.y+crt.vision)):
-            targets.append((Target(food.x, food.y), distance(food, crt), 
-                            angle(food, crt)))
+    avoids = []
 
-   
+    # generates list of targets that the creature can "see"
+    # diet is a value from 0.0 to 1.0
+    # less than 0.5 means herbavore only, greter than 0.5 means 
+    # predator only. 0.5 can eat both
+    # creature only chases food if it is not full
+    if crt.numEaten < crt.feelsFull:
+        if crt.diet <= 0.5:
+            for food in foods:
+                if (food.x in range(crt.x-crt.vision, crt.x+crt.vision) and 
+                food.y in range(crt.y-crt.vision, crt.y+crt.vision)):
+                    targets.append((Target(food.x, food.y), distance(food, crt), 
+                                    angle(food, crt)))
+    
+    # Both generaters a lsit of prey for predators and a list of predators to 
+    # avoid of the prey
+    for tarCrt in creatures:
+        # prevents canabalism
+        if tarCrt.species != crt.species:
+            # Checks if visible
+            if (tarCrt.x in range(crt.x-crt.vision, crt.x+crt.vision) and 
+            tarCrt.y in range(crt.y-crt.vision, crt.y+crt.vision)):
+                # Checks if hungry and able to eat veggies
+                if crt.diet >= 0.5 and crt.numEaten < crt.feelsFull:
+                    targets.append((Target(tarCrt.x, tarCrt.y), 
+                                distance(tarCrt, crt), angle(tarCrt, crt)))
+                # Checks if predator nearby and if creature is risk averse
+                if crt.risk <= 0.5 and tarCrt.diet >= 0.5:
+                    x = round(crt.x - math.sin(angle(tarCrt, crt)))
+                    y = round(crt.y - math.cos(angle(tarCrt, crt)))
+                    avoidTar = Target(x, y)
+
+                    avoids.append((avoidTar, distance(tarCrt, crt), 
+                                angle(tarCrt, crt) + math.pi))
+
     # filters targets to return closest
+    closestTar = None
+    closestAvoids = None
+
+    # gets closest desireale target
     if len(targets) > 0:
-        closestTarget =  min(targets, key = lambda t: t[1])
-        crt.prevTarget = closestTarget[0]
+        closestTar = min(targets, key = lambda t: t[1])
+        crt.prevTarget = closestTar[0]
+
+    # gets closests threat
+    if len(avoids) > 0:
+        closestAvoids =  min(avoids, key = lambda t: t[1])
+    
+    # checks if predator should be avoided with high priority
+    if crt.risk < 0.5 and closestAvoids != None:
+        closestTar =  closestAvoids
+        crt.prevTarget = closestTar[0]
+
+    # gives partially risk adverse creatures the chance to avoid predators but 
+    # they will still be tempeted by food if it is closer then the predator
+    elif crt.risk == 0.5 and closestAvoids != None: 
+        closestTar = min([closestAvoids, closestTar], key = lambda t: t[1])
+        crt.prevTarget = closestTar[0]
         
-    else:
+    
+
+    if len(targets) == 0 and len(avoids) == 0:
         # gets location of creature and save it as a set
         x = set(range(getBounds(crt)["xleft"]-crt.width, 
                         getBounds(crt)["xright"]+crt.width))
@@ -242,14 +254,14 @@ def selectTarget(crt, foods):
                                 random.randint(0, displayHeight - crt.height))
             
         
-        closestTarget = [crt.prevTarget, distance(crt.prevTarget, crt), 
+        closestTar = [crt.prevTarget, distance(crt.prevTarget, crt), 
                             angle(crt.prevTarget, crt)]
                             
-    return closestTarget
+    return closestTar
 
 # updates creatures move
-def updateIntention(crt, foods):
-    target = selectTarget(crt, foods)
+def updateIntention(crt, foods, creatures):
+    target = selectTarget(crt, foods, creatures)
     crt.nextMove = target[2]
         
 
@@ -275,24 +287,27 @@ def getBounds(obj):
             "yright":int(obj.y +(3*obj.height)/2)}
 
 # Removes any food that is touched by a creature
-def checkFoodCollisions(crt, foods):
+def checkCollisions(crt, foods):
     # Iterate through copy of list so that we can alter the inital list without 
     # a new loop
     for food in foods[:]:
-        if food != crt:
+        if food != crt and (crt.numEaten < crt.feelsFull):
             # Checks for overlaps bewtween objects
             x = set(range(getBounds(food)["xleft"], getBounds(food)["xright"]))
             y = set(range(getBounds(food)["yleft"], getBounds(food)["yright"]))
 
-            if (x.intersection(range(getBounds(crt)["xleft"], 
-            getBounds(crt)["xright"])) and 
-            y.intersection((range(getBounds(crt)["yleft"], 
-            getBounds(crt)["yright"])))):
-
-                # If an object is collided with by a creature it dissapers 
-                # (Think eaten, drunk, consumed etc.)
-                foods.remove(food)
-                crt.numEaten += 1
+            if ((isinstance(food, Food) and crt.diet <= 0.5) or 
+            ((isinstance(food, Creature) and (crt.diet >= 0.5 and 
+            food.species != crt.species)))):
+                
+                if (x.intersection(range(getBounds(crt)["xleft"], 
+                getBounds(crt)["xright"])) and 
+                y.intersection((range(getBounds(crt)["yleft"], 
+                getBounds(crt)["yright"])))):
+                    # If an object is collided with by a creature it dissapers 
+                    # (Think eaten, drunk, consumed etc.)
+                    foods.remove(food)
+                    crt.numEaten += 1
     return foods
 
 # Generates food objects
@@ -354,11 +369,25 @@ def breedCreatures(creatures, survivingSpecies):
 
                 # loop through each gene
                 for gene in DNAAtributes:
-                    # find the dominant gene of each pair
+                    # find the dominant gene of each pair and apply the effect 
+                    # to the creature
+
                     allels = getattr(baseCreature.DNA, gene)
-                    dominant = max(allels, key = lambda t: t.dominance)
-                    # Apply the genes effect to the creature
-                    baseCreature = dominant.effect(baseCreature)
+
+                    # This check allows for co-dominance of different genes only
+                    if (allels[0].dominance == allels[1].dominance and 
+                    allels[0].name != allels[1].name):
+                        for func in allels[0].effect:
+                            baseCreature = func(baseCreature)
+
+                        for func in allels[1].effect:
+                            baseCreature = func(baseCreature)
+                    elif allels[0].dominance > allels[1].dominance:
+                        for func in allels[0].effect:
+                            baseCreature = func(baseCreature)
+                    else:
+                        for func in allels[1].effect:
+                            baseCreature = func(baseCreature)
 
                 # Add finalized creature to list of cretures
                 newCreatures.append(baseCreature)
@@ -398,18 +427,25 @@ def populateCreatures(popList):
             baseCreature = Creature(BASE_CREATURE_WIDTH,BASE_CREATURE_HEIGHT, 
                                     species["color"], species["species"], 
                                     species["base"])
-
             # Apply effects of the dominant genes
             for gene in DNAAtributes:
                 allels = getattr(baseCreature.DNA, gene)
                 dominant = max(allels, key = lambda t: t.dominance)
-                baseCreature = dominant.effect(baseCreature)
+                for func in dominant.effect:
+                    baseCreature = func(baseCreature)
                 
             creatures.append(baseCreature)
-    
     return creatures
 
-def gameLoop(creatures, startingSpecies):
+# Checks to see if all creatures are full
+def allFull(crts):
+    for crt in crts:
+        if crt.numEaten < crt.feelsFull:
+            return False
+    return True
+
+
+def gameLoop(creatures, startingSpecies, foodNum):
     # Tracks population counts
     for species in startingSpecies:
         speciesCount = len([x for x in creatures if x.species == species])
@@ -425,7 +461,10 @@ def gameLoop(creatures, startingSpecies):
     clock = pygame.time.Clock()
 
     # Adds food to map
-    foods = populateFood(60)
+    foods = populateFood(foodNum)
+
+    # declare globals
+    global roundsCount
     
     # Main round loop
     while not gameExit:
@@ -443,34 +482,40 @@ def gameLoop(creatures, startingSpecies):
         if paused:
             # Adds rectangle on each creature that can be used to check for 
             # mouse collisions
-            for creature in creatures:
-                rect = pygame.Rect(creature.x, creature.y, creature.width, creature.height)
-                if rect.collidepoint(pygame.mouse.get_pos()) and lastHovered != creature:
+            for crt in creatures:
+                rect = pygame.Rect(crt.x, crt.y, crt.width, crt.height)
+                if (rect.collidepoint(pygame.mouse.get_pos()) and 
+                lastHovered != crt):
                     # saves last hover tp prevent multiple trigger on 
                     # similar events (i.e. mouse twitches)
-                    lastHovered = creature
+                    lastHovered = crt
 
                     # Print creature information
-                    print(f"{creature.species} {creature.id} has eaten", 
-                        f"{creature.numEaten} foods. It is at",
-                        f"{creature.x, creature.y} It is currenlty headed for" 
-                        f"{creature.prevTarget.x, creature.prevTarget.y}.")
-                    print(f"Its creature next move is: {creature.nextMove}")
+                    print(f"{crt.species} {crt.id} has eaten", 
+                        f"{crt.numEaten} foods. It is at",
+                        f"{crt.x, crt.y} It is currenlty headed for" 
+                        f"{crt.prevTarget.x, crt.prevTarget.y}.")
+                    print(f"feelsFull: {crt.numEaten >= crt.feelsFull}")
+                    print(f"Its creature next move is: {crt.nextMove}")
+                    print(f"Its Risk is {crt.risk}")
+                    print(f"Its Risk is {crt.risk}")
+                    
                     for gene in DNAAtributes:
                         print(f'Its {gene} is ' 
-                            f'{getattr(creature.DNA, gene)[0].name}', 
-                            f'{getattr(creature.DNA, gene)[1].name}')
-
+                            f'{getattr(crt.DNA, gene)[0].name}', 
+                            f'{getattr(crt.DNA, gene)[1].name}')
+            if event.type == pygame.KEYDOWN and event.key == 13:
+                numLoops = 1000
         # When all cretures are dead, or all food is gone or enough loops have 
         # happened end the current round    
-        if len(foods) == 0 or len(creatures) == 0 or numLoops > (1000):
-            # declare globals
-            global roundsCount
+        if (len(foods) == 0 or len(creatures) == 0 or numLoops > (1000) or 
+        allFull(creatures)):
+           
             
             # reset loop number
             numLoops = 0
 
-            # kill any creatures that did not ge enough food
+            # kill any creatures that did not get enough food
             for creature in creatures[:]:
                 if creature.numEaten < creature.minFood:
                     print(f'{creature.species} number {creature.id}', 
@@ -492,7 +537,7 @@ def gameLoop(creatures, startingSpecies):
                 creatures = breedCreatures(creatures, startingSpecies)
 
                 # Run another round with new creatures
-                gameLoop(creatures, startingSpecies)
+                gameLoop(creatures, startingSpecies, foodNum)
                 gameExit = True
             else:
                 gameExit = True
@@ -505,12 +550,18 @@ def gameLoop(creatures, startingSpecies):
             gameDisplay.fill(white)
 
             # Movment logic for creatures.
-            for creature in creatures:
-                foods = checkFoodCollisions(creature, foods)
-                updateIntention(creature, foods) 
+            for creature in creatures[:]:
+                foods = checkCollisions(creature, foods)
+                if creature.diet >= 0.5:
+                    creatures = checkCollisions(creature, creatures)
+                
+                # move creature
+                updateIntention(creature, foods, creatures) 
                 move(creature)
-
-                # add vision to display
+                
+            
+            # add vision to display
+            for creature in creatures:
                 drawVision(creature)
 
             # these loops are seperate to allow the creatures to always be above 
@@ -528,25 +579,133 @@ def gameLoop(creatures, startingSpecies):
             #advance clock
             clock.tick(fps)
 
-# This first model shows 3 species that are each 100% homogeneous internally 
-# with 2 copies of each allel. Shows competition instead of evolution. 
-# TODO decide naming conventions to make Models appropriately specific
-def ThreeHomogeneousSpeciesInCompetitionModel():
-    blueSpecies = {"num": startingNumber, "base": BaseBlueDNA,
+# Defines a list of genes that have specific traits. These must be added by hand
+# TODO allow loading from cvd file maybe? 
+longLegs = Gene("longLegs", "speedGene", 0, [modifyAttribute(5, "speed")])
+shortLegs = Gene("shortLegs", "speedGene", 1, [modifyAttribute(-2, "speed")])
+medLegs = Gene("shortLegs", "speedGene", .5, [])
+
+hawkEyes = Gene("hawkEyes", "sightGene", 0, [modifyAttribute(75, "vision")])
+wormEyes = Gene("wormEyes", "sightGene", 1, [modifyAttribute(-25, "vision")])
+normalEyes = Gene("normalEyes", "sightGene", 0.5, [])
+
+FastMeta = Gene("FastMeta", "motabolismGene", 0, 
+                [modifyAttribute(1, "metabolism"), 
+                modifyAttribute(1, "fullness")])
+slowMeta = Gene("slowMeta", "motabolismGene", 1, 
+                [modifyAttribute(-1, "metabolism"), 
+                modifyAttribute(-1, "fullness")])
+medMeta = Gene("medMeta", "motabolismGene", 0.5, [])
+
+predator = Gene("meatEater", "sightGene", 1, [modifyAttribute(0.25, "diet")])
+herbavore = Gene("leafEater", "sightGene", 1, [modifyAttribute(-0.25, "diet")])
+
+skiddish = Gene("scared", "riskGene", 1, [modifyAttribute(-0.25, "risk")])
+oblivious = Gene("oblivious", "riskGene", 1, [modifyAttribute(0.25, "risk")])
+
+# Create the base DNA for each species type as well as an overall DNA template
+BaseAllDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
+                    [medMeta, medMeta], [herbavore, herbavore], 
+                    [skiddish, skiddish])
+BaseGreenDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], 
+                    [medMeta, medMeta], [herbavore, herbavore], 
+                    [skiddish, skiddish])
+BaseBlueDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
+                    [medMeta, medMeta], [herbavore, herbavore], 
+                    [skiddish, skiddish])
+BaseRedDNA = DNA([shortLegs, shortLegs], [hawkEyes, hawkEyes], 
+                    [medMeta, medMeta], [herbavore, herbavore], 
+                    [skiddish, skiddish])
+BaseYellowDNA = DNA([shortLegs, longLegs], [wormEyes, hawkEyes], 
+                    [slowMeta, FastMeta], [herbavore, herbavore], 
+                    [skiddish, skiddish])
+BaseYellowDNA2 = DNA([shortLegs, longLegs], [wormEyes, wormEyes], 
+                    [medMeta, slowMeta], [herbavore, herbavore], 
+                    [skiddish, skiddish])
+BasePredatorDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], 
+                    [slowMeta, slowMeta], [predator, predator], 
+                    [skiddish, skiddish])
+
+# Intialize list of DNA attributes for lookups later
+DNAAtributes = [a for a in dir(BaseAllDNA) if (not a.startswith('__') and 
+                                        not callable(getattr(BaseAllDNA,a)))]
+
+
+# Initializes template creatures. When creatures are breed they use these 
+# templates before their genes are changed with a parental gene mix. This 
+# is not biologically acurate but allows for genes to be stored as an effect on 
+# a baseline value
+BlueTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, blue, "blue",
+                        BaseBlueDNA)
+GreenTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, green, 
+                        "green", BaseGreenDNA)
+RedTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, red, "red",
+                        BaseRedDNA)
+YellowTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, yellow, 
+                        "yellow", BaseYellowDNA)
+PredatorTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, orange, 
+                        "orange", BasePredatorDNA)
+
+
+# stores the templates for easy access
+TemplateDNADict = {"blue": BlueTemplate, "red": RedTemplate, 
+                    "green": GreenTemplate, "yellow": YellowTemplate, 
+                    "orange": PredatorTemplate}
+
+
+# Define Species
+blueSpecies = {"num": startingNumber, "base": BaseBlueDNA,
                      "speciesBaseDNA": BaseBlueDNA, "color": blue, 
                      "species": "blue"}
-    redSpecies = {"num": startingNumber, "base": BaseRedDNA, 
+redSpecies = {"num": startingNumber, "base": BaseRedDNA, 
                     "speciesBaseDNA": BaseRedDNA, "color": red, 
                     "species": "red"}
-    greenSpecies = {"num": startingNumber, "base": BaseGreenDNA, 
+greenSpecies = {"num": startingNumber, "base": BaseGreenDNA, 
                     "speciesBaseDNA": BaseGreenDNA, "color": green, 
                     "species": "green"}
-    creatures = populateCreatures([blueSpecies, redSpecies, greenSpecies])
-    startingSpecies = [blueSpecies["species"], greenSpecies["species"], 
-                        redSpecies["species"] ]
-    gameLoop(creatures, startingSpecies)
+yellowSpecies = {"num": startingNumber, "base": BaseYellowDNA, 
+                    "speciesBaseDNA": BaseYellowDNA, "color": yellow, 
+                    "species": "yellow"}
+yellowSpecies2 = {"num": startingNumber, "base": BaseYellowDNA, 
+                    "speciesBaseDNA": BaseYellowDNA2, "color": yellow, 
+                    "species": "yellow"}
+predatorSpecies = {"num": startingNumber, "base": BasePredatorDNA, 
+                    "speciesBaseDNA": BasePredatorDNA, "color": orange, 
+                    "species": "orange"}
 
-ThreeHomogeneousSpeciesInCompetitionModel()
+def StartPopsFromBreeding(foodNum, speciesList):
+    # produce list od starting species
+    startingSpecies = set()
+    for s in speciesList:
+        startingSpecies.add(s["species"])
+    startingSpecies = list(startingSpecies)
+
+    # populate initial creatures
+    creatures = populateCreatures(speciesList)
+
+    # breed inital creatures
+    creatures = breedCreatures(creatures, startingSpecies)
+
+    gameLoop(creatures, startingSpecies, foodNum)
+
+
+ThreeHomoSpeciesInComp = [blueSpecies, redSpecies, greenSpecies]
+ThreeHomoOneHeteroSpeciesInComp = [blueSpecies, redSpecies, greenSpecies, 
+                                    yellowSpecies]
+OneHeteroSpeciesInComp = [yellowSpecies]
+HeteroPreyVsHomoPredator = [yellowSpecies, predatorSpecies]
+OnePredator = [predatorSpecies]
+ThreeHomoOneHeteroSpeciesInCompOnePred = [blueSpecies, redSpecies, greenSpecies, 
+                                            yellowSpecies, predatorSpecies]
+PredatorsAndPrey = [predatorSpecies, redSpecies]
+#StartPopsFromBreeding(10, OneHeteroSpeciesInComp)
+#StartPopsFromBreeding(60, ThreeHomoOneHeteroSpeciesInComp)
+#StartPopsFromBreeding(60, ThreeHomoSpeciesInComp)
+#StartPopsFromBreeding(10, HeteroPreyVsHomoPredator)
+#StartPopsFromBreeding(10, OnePredator)
+StartPopsFromBreeding(50,ThreeHomoOneHeteroSpeciesInCompOnePred)
+#StartPopsFromBreeding(50,PredatorsAndPrey)
+
 pygame.quit()
 quit()
     
