@@ -208,8 +208,13 @@ def selectTarget(crt, foods, creatures):
                                 distance(tarCrt, crt), angle(tarCrt, crt)))
                 # Checks if predator nearby and if creature is risk averse
                 if crt.risk <= 0.5 and tarCrt.diet >= 0.5:
-                    x = round(crt.x - math.sin(angle(tarCrt, crt)))
-                    y = round(crt.y - math.cos(angle(tarCrt, crt)))
+
+                    # Selects a point at in the opposite direction of the threat
+                    # using the creature's max movement
+                    x = round(crt.x - 
+                                (math.sin(angle(tarCrt, crt)))*crt.movement)
+                    y = round(crt.y - 
+                                (math.cos(angle(tarCrt, crt)))*crt.movement)
                     avoidTar = Target(x, y)
 
                     avoids.append((avoidTar, distance(tarCrt, crt), 
