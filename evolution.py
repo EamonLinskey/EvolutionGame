@@ -14,7 +14,7 @@ BASE_VISION = 50
 BASE_MINFOOD = 2
 BASE_NUMCHILD = 2
 roundsCount = 0
-startingNumber = 2
+startingNumber = 4
 
 displayWidth = 800
 displayHeight = 600
@@ -35,6 +35,7 @@ blue = (0,0, 255)
 grey = (220,220,220)
 yellow = (255,255,0)
 orange = (255,135,0)
+purple = (128,0,128)
 
 
 # initialize pygame
@@ -67,12 +68,15 @@ class Gene:
 class DNA: 
     # Each gene should have 2 allels. So they should be list of length 2
     def __init__(self, speedGene, sightGene, motabolismGene, dietGene, 
-                    riskGene):
+                    riskGene, sizeGene, reproGene, stomachGene):
         self.speedGene = speedGene
         self.sightGene = sightGene
         self.motabolismGene = motabolismGene
         self.dietGene = dietGene
         self.riskGene = riskGene
+        self.sizeGene = sizeGene
+        self.reproGene = reproGene
+        self.stomachGene = stomachGene
 
 # Defines Creature object. Properties set to constants can be changed once more
 # genes are defined
@@ -127,15 +131,10 @@ class Food:
         Food.counter += 1
 
 # Curried function that allows any attribute to be changed when a creature param 
-# is used. Attributes key must be manually edited each time a new gene is added 
-# to make sure the correct creature attribute is updated
+# is used. 
 def modifyAttribute(amount, attribute):
     def f(crt):
-        attributes = {"speed": "movement", "vision": "vision", 
-                        "metabolism": "minFood", "diet": "diet", 
-                        "fullness": "feelsFull", "risk": "risk"}
-        setattr(crt, attributes[attribute], 
-                (getattr(crt, attributes[attribute]) + amount)) 
+        setattr(crt, attribute, (getattr(crt, attribute) + amount)) 
         return crt
     return f
 
@@ -241,7 +240,10 @@ def selectTarget(crt, foods, creatures):
     # gives partially risk adverse creatures the chance to avoid predators but 
     # they will still be tempeted by food if it is closer then the predator
     elif crt.risk == 0.5 and closestAvoids != None: 
-        closestTar = min([closestAvoids, closestTar], key = lambda t: t[1])
+        if (closestTar == None):
+            closestTar = closestAvoids
+        else:
+            closestTar = min([closestAvoids, closestTar], key = lambda t: t[1])
         crt.prevTarget = closestTar[0]
         
     
@@ -586,8 +588,8 @@ def gameLoop(creatures, startingSpecies, foodNum):
 
 # Defines a list of genes that have specific traits. These must be added by hand
 # TODO allow loading from cvd file maybe? 
-longLegs = Gene("longLegs", "speedGene", 0, [modifyAttribute(5, "speed")])
-shortLegs = Gene("shortLegs", "speedGene", 1, [modifyAttribute(-2, "speed")])
+longLegs = Gene("longLegs", "speedGene", 0, [modifyAttribute(5, "movement")])
+shortLegs = Gene("shortLegs", "speedGene", 1, [modifyAttribute(-2, "movement")])
 medLegs = Gene("shortLegs", "speedGene", .5, [])
 
 hawkEyes = Gene("hawkEyes", "sightGene", 0, [modifyAttribute(75, "vision")])
@@ -595,41 +597,78 @@ wormEyes = Gene("wormEyes", "sightGene", 1, [modifyAttribute(-25, "vision")])
 normalEyes = Gene("normalEyes", "sightGene", 0.5, [])
 
 FastMeta = Gene("FastMeta", "motabolismGene", 0, 
-                [modifyAttribute(1, "metabolism"), 
-                modifyAttribute(1, "fullness")])
+                [modifyAttribute(1, "minFood"), 
+                modifyAttribute(1, "feelsFull")])
 slowMeta = Gene("slowMeta", "motabolismGene", 1, 
-                [modifyAttribute(-1, "metabolism"), 
-                modifyAttribute(-1, "fullness")])
+                [modifyAttribute(-1, "minFood"), 
+                modifyAttribute(-1, "feelsFull")])
 medMeta = Gene("medMeta", "motabolismGene", 0.5, [])
 
-predator = Gene("meatEater", "sightGene", 1, [modifyAttribute(0.25, "diet")])
-herbavore = Gene("leafEater", "sightGene", 1, [modifyAttribute(-0.25, "diet")])
+predator = Gene("predator", "sightGene", 1, [modifyAttribute(0.25, "diet")])
+herbavore = Gene("herbavore", "sightGene", 1, [modifyAttribute(-0.25, "diet")])
 
-skiddish = Gene("scared", "riskGene", 1, [modifyAttribute(-0.25, "risk")])
+skiddish = Gene("skiddish", "riskGene", 1, [modifyAttribute(-0.25, "risk")])
 oblivious = Gene("oblivious", "riskGene", 1, [modifyAttribute(0.25, "risk")])
+
+largeFrame = Gene("largeFrame", "sizeGene", 0, [modifyAttribute(5, "height"), 
+                                                modifyAttribute(5, "width")])
+normalFrame = Gene("normalFrame", "sizeGene", 0.5, [])
+smallFrame = Gene("smallFrame", "sizeGene", 1, [modifyAttribute(-3, "height"), 
+                                                modifyAttribute(-3, "width")])
+
+normalStomach = Gene("normalStomach", "stomachGene", 0.5, [])
+ravenous = Gene("ravenous", "stomachGene", 0, 
+                    [modifyAttribute(1, "feelsFull")])
+smallStomach = Gene("smallStomach", "stomachGene", 1, 
+                    [modifyAttribute(-1, "feelsFull")])
+
+normalLitter = Gene("normalLitter", "reproGene", 0.5, [])
+largeLitter = Gene("largeLitter", "reproGene", 0, 
+                    [modifyAttribute(2, "feelsFull")])
+smallLitter = Gene("smallLitter", "reproGene", 1, 
+                    [modifyAttribute(-1, "reproCapacity")])
+
 
 # Create the base DNA for each species type as well as an overall DNA template
 BaseAllDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
-                    [skiddish, skiddish])
+                    [skiddish, oblivious], [normalFrame, normalFrame], 
+                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+
 BaseGreenDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
-                    [skiddish, skiddish])
+                    [skiddish, skiddish], [smallFrame, smallFrame],
+                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+
 BaseBlueDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
-                    [skiddish, skiddish])
+                    [skiddish, skiddish], [normalFrame, normalFrame],
+                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+
 BaseRedDNA = DNA([shortLegs, shortLegs], [hawkEyes, hawkEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
-                    [skiddish, skiddish])
+                    [skiddish, skiddish], [largeFrame, largeFrame],
+                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+
 BaseYellowDNA = DNA([shortLegs, longLegs], [wormEyes, hawkEyes], 
                     [slowMeta, FastMeta], [herbavore, herbavore], 
-                    [skiddish, skiddish])
-BaseYellowDNA2 = DNA([shortLegs, longLegs], [wormEyes, wormEyes], 
+                    [skiddish, skiddish], [smallFrame, largeFrame],
+                    [largeLitter, largeLitter], [smallStomach, ravenous])
+
+BaseYellowDNA2 = DNA([shortLegs, longLegs], [normalEyes, wormEyes], 
                     [medMeta, slowMeta], [herbavore, herbavore], 
-                    [skiddish, skiddish])
+                    [skiddish, oblivious], [normalFrame, normalFrame],
+                    [largeLitter, normalLitter], [normalStomach, smallStomach])
+
 BasePredatorDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], 
                     [slowMeta, slowMeta], [predator, predator], 
-                    [skiddish, skiddish])
+                    [skiddish, skiddish], [normalFrame, normalFrame],
+                    [smallLitter, smallLitter], [smallStomach, smallStomach])
+
+BaseOmnivoreDNA = DNA([longLegs, longLegs], [normalEyes, normalEyes], 
+                    [slowMeta, slowMeta], [herbavore, predator], 
+                    [skiddish, oblivious], [normalFrame, normalFrame],
+                    [normalLitter, smallLitter], [smallStomach, smallStomach])
 
 # Intialize list of DNA attributes for lookups later
 DNAAtributes = [a for a in dir(BaseAllDNA) if (not a.startswith('__') and 
@@ -650,12 +689,14 @@ YellowTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, yellow,
                         "yellow", BaseYellowDNA)
 PredatorTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, orange, 
                         "orange", BasePredatorDNA)
+OmnivoreTemplate = Creature(BASE_CREATURE_WIDTH, BASE_CREATURE_HEIGHT, purple, 
+                        "purple", BaseOmnivoreDNA)
 
 
 # stores the templates for easy access
 TemplateDNADict = {"blue": BlueTemplate, "red": RedTemplate, 
                     "green": GreenTemplate, "yellow": YellowTemplate, 
-                    "orange": PredatorTemplate}
+                    "orange": PredatorTemplate, "purple": OmnivoreTemplate}
 
 
 # Define Species
@@ -677,6 +718,9 @@ yellowSpecies2 = {"num": startingNumber, "base": BaseYellowDNA,
 predatorSpecies = {"num": startingNumber, "base": BasePredatorDNA, 
                     "speciesBaseDNA": BasePredatorDNA, "color": orange, 
                     "species": "orange"}
+omnivoreSpecies = {"num": startingNumber, "base": BaseOmnivoreDNA, 
+                    "speciesBaseDNA": BaseOmnivoreDNA, "color": purple, 
+                    "species": "purple"}
 
 def StartPopsFromBreeding(foodNum, speciesList):
     # produce list od starting species
@@ -703,13 +747,19 @@ OnePredator = [predatorSpecies]
 ThreeHomoOneHeteroSpeciesInCompOnePred = [blueSpecies, redSpecies, greenSpecies, 
                                             yellowSpecies, predatorSpecies]
 PredatorsAndPrey = [predatorSpecies, redSpecies]
-#StartPopsFromBreeding(10, OneHeteroSpeciesInComp)
+OmnivoresAndPrey = [omnivoreSpecies, redSpecies]
+ThreeHomoOneHeteroSpeciesInCompOneOmni = [blueSpecies, redSpecies, greenSpecies, 
+                                            yellowSpecies, omnivoreSpecies]
+StartPopsFromBreeding(20, OneHeteroSpeciesInComp)
 #StartPopsFromBreeding(60, ThreeHomoOneHeteroSpeciesInComp)
 #StartPopsFromBreeding(60, ThreeHomoSpeciesInComp)
 #StartPopsFromBreeding(10, HeteroPreyVsHomoPredator)
 #StartPopsFromBreeding(10, OnePredator)
-StartPopsFromBreeding(50,ThreeHomoOneHeteroSpeciesInCompOnePred)
-#StartPopsFromBreeding(50,PredatorsAndPrey)
+#StartPopsFromBreeding(50, ThreeHomoOneHeteroSpeciesInCompOnePred)
+#StartPopsFromBreeding(50, PredatorsAndPrey)
+#StartPopsFromBreeding(20, OmnivoresAndPrey)
+
+#StartPopsFromBreeding(80, ThreeHomoOneHeteroSpeciesInCompOneOmni)
 
 pygame.quit()
 quit()
