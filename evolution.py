@@ -14,7 +14,7 @@ BASE_VISION = 50
 BASE_MINFOOD = 2
 BASE_NUMCHILD = 2
 roundsCount = 0
-startingNumber = 4
+startingNumber = 2
 
 displayWidth = 800
 displayHeight = 600
@@ -68,7 +68,7 @@ class Gene:
 class DNA: 
     # Each gene should have 2 allels. So they should be list of length 2
     def __init__(self, speedGene, sightGene, motabolismGene, dietGene, 
-                    riskGene, sizeGene, reproGene, stomachGene):
+                    riskGene, sizeGene, reproGene, stomachGene, lifespanGene):
         self.speedGene = speedGene
         self.sightGene = sightGene
         self.motabolismGene = motabolismGene
@@ -77,6 +77,7 @@ class DNA:
         self.sizeGene = sizeGene
         self.reproGene = reproGene
         self.stomachGene = stomachGene
+        self.lifespanGene = lifespanGene
 
 # Defines Creature object. Properties set to constants can be changed once more
 # genes are defined
@@ -102,6 +103,7 @@ class Creature:
         self.diet = 0.5
         self.risk = 0.5
         self.feelsFull = BASE_MINFOOD + 1
+        self.lifespan = 1
         self.reproCapacity = 2
         Creature.counter += 1
 
@@ -351,6 +353,12 @@ def breedCreatures(creatures, survivingSpecies):
         # get all members of single species
         filtCrts = [crt for crt in creatures if crt.species == species]
         
+        # Adds surviving parents to next rounds creatures
+        for parent in filtCrts:
+            parent.lifespan -= 1;
+            if parent.lifespan > 0:
+                newCreatures.append(copy.deepcopy(parent))
+
         # If there are 2 or more potential mates:
         while len(filtCrts) > 1:
             # Select 2 parents at random. (Assumes no sexual selection)
@@ -416,9 +424,6 @@ def breedCreatures(creatures, survivingSpecies):
             for index in finishedParentsIndex:  
                 del filtCrts[index]
 
-            # TODO if I inted to support inter round survivals of parents i need
-            # to reset their reproductive capacity or decrement a copy instead 
-            # of the original
     return newCreatures
 
 # Used to initalize  starting populations. Diffrent simulations should change 
@@ -505,7 +510,7 @@ def gameLoop(creatures, startingSpecies, foodNum):
                     print(f"feelsFull: {crt.numEaten >= crt.feelsFull}")
                     print(f"Its creature next move is: {crt.nextMove}")
                     print(f"Its Risk is {crt.risk}")
-                    print(f"Its Risk is {crt.risk}")
+                    print(f"It has {crt.lifespan} rounds remaining")
                     
                     for gene in DNAAtributes:
                         print(f'Its {gene} is ' 
@@ -628,47 +633,60 @@ largeLitter = Gene("largeLitter", "reproGene", 0,
 smallLitter = Gene("smallLitter", "reproGene", 1, 
                     [modifyAttribute(-1, "reproCapacity")])
 
+extraLongLife = Gene("extraLongLife", "lifespan", 1, 
+                    [modifyAttribute(2, "lifespan")])
+longLife = Gene("longLife", "lifespan", 0.5, [modifyAttribute(1, "lifespan")])
+shortLife = Gene("shortLife", "lifespan", 0, [])
+
 
 # Create the base DNA for each species type as well as an overall DNA template
 BaseAllDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
                     [skiddish, oblivious], [normalFrame, normalFrame], 
-                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+                    [normalLitter, normalLitter], [smallStomach, smallStomach], 
+                    [shortLife, shortLife])
 
 BaseGreenDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
                     [skiddish, skiddish], [smallFrame, smallFrame],
-                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+                    [normalLitter, normalLitter], [smallStomach, smallStomach],
+                    [shortLife, shortLife])
 
 BaseBlueDNA = DNA([medLegs, medLegs], [normalEyes, normalEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
                     [skiddish, skiddish], [normalFrame, normalFrame],
-                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+                    [normalLitter, normalLitter], [smallStomach, smallStomach],
+                    [shortLife, shortLife])
 
 BaseRedDNA = DNA([shortLegs, shortLegs], [hawkEyes, hawkEyes], 
                     [medMeta, medMeta], [herbavore, herbavore], 
                     [skiddish, skiddish], [largeFrame, largeFrame],
-                    [normalLitter, normalLitter], [smallStomach, smallStomach])
+                    [normalLitter, normalLitter], [smallStomach, smallStomach],
+                    [shortLife, shortLife])
 
 BaseYellowDNA = DNA([shortLegs, longLegs], [wormEyes, hawkEyes], 
                     [slowMeta, FastMeta], [herbavore, herbavore], 
                     [skiddish, skiddish], [smallFrame, largeFrame],
-                    [largeLitter, largeLitter], [smallStomach, ravenous])
+                    [largeLitter, largeLitter], [smallStomach, ravenous],
+                    [shortLife, shortLife])
 
 BaseYellowDNA2 = DNA([shortLegs, longLegs], [normalEyes, wormEyes], 
                     [medMeta, slowMeta], [herbavore, herbavore], 
                     [skiddish, oblivious], [normalFrame, normalFrame],
-                    [largeLitter, normalLitter], [normalStomach, smallStomach])
+                    [largeLitter, normalLitter], [normalStomach, smallStomach],
+                    [shortLife, shortLife])
 
 BasePredatorDNA = DNA([longLegs, longLegs], [wormEyes, wormEyes], 
                     [slowMeta, slowMeta], [predator, predator], 
                     [skiddish, skiddish], [normalFrame, normalFrame],
-                    [smallLitter, smallLitter], [smallStomach, smallStomach])
+                    [normalLitter, normalLitter], [smallStomach, smallStomach],
+                    [longLife, longLife])
 
 BaseOmnivoreDNA = DNA([longLegs, longLegs], [normalEyes, normalEyes], 
                     [slowMeta, slowMeta], [herbavore, predator], 
                     [skiddish, oblivious], [normalFrame, normalFrame],
-                    [normalLitter, smallLitter], [smallStomach, smallStomach])
+                    [normalLitter, smallLitter], [smallStomach, smallStomach],
+                    [shortLife, shortLife])
 
 # Intialize list of DNA attributes for lookups later
 DNAAtributes = [a for a in dir(BaseAllDNA) if (not a.startswith('__') and 
@@ -750,12 +768,12 @@ PredatorsAndPrey = [predatorSpecies, redSpecies]
 OmnivoresAndPrey = [omnivoreSpecies, redSpecies]
 ThreeHomoOneHeteroSpeciesInCompOneOmni = [blueSpecies, redSpecies, greenSpecies, 
                                             yellowSpecies, omnivoreSpecies]
-StartPopsFromBreeding(20, OneHeteroSpeciesInComp)
+#StartPopsFromBreeding(20, OneHeteroSpeciesInComp)
 #StartPopsFromBreeding(60, ThreeHomoOneHeteroSpeciesInComp)
 #StartPopsFromBreeding(60, ThreeHomoSpeciesInComp)
 #StartPopsFromBreeding(10, HeteroPreyVsHomoPredator)
 #StartPopsFromBreeding(10, OnePredator)
-#StartPopsFromBreeding(50, ThreeHomoOneHeteroSpeciesInCompOnePred)
+StartPopsFromBreeding(50, ThreeHomoOneHeteroSpeciesInCompOnePred)
 #StartPopsFromBreeding(50, PredatorsAndPrey)
 #StartPopsFromBreeding(20, OmnivoresAndPrey)
 
